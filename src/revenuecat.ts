@@ -5,16 +5,34 @@ import type { CustomerInfo, CustomerInfoUpdateListener, PurchasesError, Purchase
 export const PRO_ENTITLEMENT_ID = 'pro';
 export const BILLING_SETUP_MESSAGE = 'Billing setup is needed. Add a RevenueCat public SDK key and a current offering before a purchase can be made.';
 
-const apiKey = Platform.select({
-  ios: process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY,
-  android: process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY,
-  default: process.env.EXPO_PUBLIC_REVENUECAT_WEB_API_KEY,
+export const TEST_STORE_KEY_PREFIX = 'test_';
+
+/**
+ * Debug builds prefer the Test Store key; production builds accept only store platform keys
+ * and refuse any Test Store key, even one placed in a platform variable.
+ */
+export function selectRevenueCatApiKey({ isDev, testStoreKey, platformKey }: { isDev: boolean; testStoreKey?: string; platformKey?: string }): string | undefined {
+  if (isDev && testStoreKey) return testStoreKey;
+  if (!platformKey) return undefined;
+  if (!isDev && platformKey.startsWith(TEST_STORE_KEY_PREFIX)) return undefined;
+  return platformKey;
+}
+
+const apiKey = selectRevenueCatApiKey({
+  isDev: __DEV__,
+  // Behind __DEV__ so production minification drops the inlined Test Store key from the bundle.
+  testStoreKey: __DEV__ ? process.env.EXPO_PUBLIC_REVENUECAT_TEST_STORE_API_KEY : undefined,
+  platformKey: Platform.select({
+    ios: process.env.EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY,
+    android: process.env.EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY,
+    default: process.env.EXPO_PUBLIC_REVENUECAT_WEB_API_KEY,
+  }),
 });
 let configured = false;
 
 export async function configureRevenueCat(): Promise<boolean> {
   if (!apiKey || configured) return configured;
-  Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
+  Purchases.setLogLevel(__DEV__ ? Purchases.LOG_LEVEL.DEBUG : Purchases.LOG_LEVEL.WARN);
   Purchases.configure({ apiKey });
   configured = true;
   return true;
